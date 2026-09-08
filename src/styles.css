@@ -75,8 +75,8 @@ body {
 .bank-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--text-2); font-size: 13px; margin: 8px 0; }
 .bank-stats { display: flex; justify-content: space-between; color: var(--text-2); font-size: 13px; margin-bottom: 12px; }
 .wrong-tag { color: var(--bad); font-weight: 600; }
-.bank-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.bank-actions .btn { padding: 8px 4px; font-size: 13px; }
+.bank-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.bank-actions .btn { flex: 1 1 calc(33% - 8px); padding: 8px 4px; font-size: 13px; }
 
 /* ---------- 进度条 ---------- */
 .progress { height: 4px; background: #e5e7eb; }
@@ -186,3 +186,44 @@ body {
 .sheet-item.current { box-shadow: 0 0 0 2px var(--primary); font-weight: 700; }
 .exam-nav { display: flex; gap: 10px; margin: 0 16px; }
 .exam-nav .btn { flex: 1; }
+
+/* ---------- 快速查题 ---------- */
+.search-bar {
+  display: flex; gap: 10px; padding: 14px 16px 6px;
+  position: sticky; top: 57px; z-index: 5;
+  background: var(--bg);
+}
+.search-input {
+  flex: 1; padding: 11px 14px;
+  border: 1.5px solid var(--line); border-radius: 12px;
+  font-size: 16px; background: var(--card);
+}
+.search-input:focus { outline: none; border-color: var(--primary); }
+.bank-select {
+  max-width: 130px; padding: 11px 8px;
+  border: 1.5px solid var(--line); border-radius: 12px;
+  font-size: 14px; background: var(--card);
+}
+.search-list { padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 14px; }
+.search-card {
+  background: var(--card); border-radius: var(--radius);
+  padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.card-bank {
+  float: right; font-weight: 400; color: var(--text-2);
+  font-size: 12px; background: #eef0f3; border-radius: 6px; padding: 1px 6px;
+  margin-left: 6px;
+}
+.result-answer { margin: 8px 0; font-size: 14px; color: var(--text-2); }
+.result-answer b { color: var(--ok); font-size: 16px; }
+.result-opt {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 12px; border-radius: 10px; font-size: 15px;
+  background: #fafafa; border: 1.5px solid var(--line); margin-bottom: 6px;
+  color: var(--text);
+}
+.result-opt.correct { border-color: var(--ok); background: var(--ok-bg); }
+.result-opt.correct .opt-letter { background: var(--ok); color: #fff; }
+.result-opt .opt-text { flex: 1; word-break: break-word; }
+.ans-tag { color: var(--ok); font-weight: 700; }
+mark.hl { background: #fde68a; color: inherit; border-radius: 3px; padding: 0 1px; }

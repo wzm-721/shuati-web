@@ -11,6 +11,7 @@ import {
   saveExam,
   shuffle,
 } from './lib/storage.js';
+import { searchQuestions, formatAnswer } from './lib/search.js';
 
 const TYPE_LABEL = { single: '单选题', multi: '多选题', judge: '判断题' };
 
@@ -41,6 +42,9 @@ export default function App() {
     <div className="app">
       {route.name === 'home' && (
         <Home banks={banks} onRefresh={refresh} onOpen={(r) => setRoute(r)} />
+      )}
+      {route.name === 'search' && (
+        <Search banks={banks} initialBankId={route.bankId} onBack={goHome} />
       )}
       {route.name === 'practice' && (
         <Practice
@@ -126,6 +130,9 @@ function Home({ banks, onRefresh, onOpen }) {
         <button className="btn primary" onClick={() => fileRef.current.click()}>
           ＋ 导入题库
         </button>
+        <button className="btn" onClick={() => onOpen({ name: 'search', bankId: '' })}>
+          🔍 查题
+        </button>
         <input ref={fileRef} type="file" accept=".docx" hidden onChange={onFile} />
       </header>
 
@@ -173,6 +180,9 @@ function Home({ banks, onRefresh, onOpen }) {
                   <span className={rec.wrongIds.length ? 'wrong-tag' : ''}>错题 {rec.wrongIds.length}</span>
                 </div>
                 <div className="bank-actions">
+                  <button className="btn" onClick={() => onOpen({ name: 'search', bankId: bank.id })}>
+                    查题
+                  </button>
                   <button className="btn" onClick={() => onOpen({ name: 'practice', bankId: bank.id, questionIds: bank.questions.map((q) => q.id), title: '顺序练习' })}>
                     顺序练习
                   </button>
@@ -572,6 +582,87 @@ function ExamResult({ bank, result, onHome, onWrong }) {
           <button className="btn primary" onClick={onHome}>返回首页</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ================= 快速查题 ================= */
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function highlight(text, kw) {
+  const k = (kw || '').trim();
+  if (!k || !text) return text;
+  const re = new RegExp('(' + escapeRe(k) + ')', 'gi');
+  const parts = text.split(re);
+  const out = [];
+  parts.forEach((p, i) => {
+    if (i % 2 === 1) out.push(<mark key={'h' + i} className="hl">{p}</mark>);
+    else if (p) out.push(p);
+  });
+  return out;
+}
+
+function Search({ banks, initialBankId, onBack }) {
+  const [kw, setKw] = useState('');
+  const [bankId, setBankId] = useState(initialBankId || '');
+  const results = useMemo(() => searchQuestions(banks, kw, bankId), [banks, kw, bankId]);
+
+  return (
+    <div className="page search">
+      <header className="topbar">
+        <button className="btn" onClick={onBack}>← 返回</button>
+        <h1 className="topbar-title">快速查题</h1>
+      </header>
+      <div className="search-bar">
+        <input
+          className="search-input"
+          type="search"
+          placeholder="输入题干或选项关键词"
+          value={kw}
+          autoFocus
+          onChange={(e) => setKw(e.target.value)}
+        />
+        <select className="bank-select" value={bankId} onChange={(e) => setBankId(e.target.value)}>
+          <option value="">全部题库</option>
+          {banks.map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {!kw.trim() ? (
+        <div className="empty">
+          <p>输入关键词，即可查到相关题目和正确答案</p>
+        </div>
+      ) : results.length === 0 ? (
+        <div className="empty"><p>没有找到相关题目，换个关键词试试</p></div>
+      ) : (
+        <div className="search-list">
+          {results.map((q) => (
+            <div className="search-card" key={q.id}>
+              <div className="q-type">
+                {TYPE_LABEL[q.type] || '题目'}{q.type === 'multi' && <span className="multi-hint">（多选）</span>}
+                <span className="card-bank">{q.bankName}</span>
+              </div>
+              <div className="q-text">{highlight(q.text, kw)}</div>
+              <div className="result-answer">答案：<b>{formatAnswer(q.answer)}</b></div>
+              <div className="options">
+                {q.options.map((o) => {
+                  const isAns = q.answer.includes(o.letter);
+                  return (
+                    <div key={o.letter} className={`result-opt${isAns ? ' correct' : ''}`}>
+                      <span className="opt-letter">{o.letter === '√' || o.letter === '×' ? '' : o.letter}</span>
+                      <span className="opt-text">{highlight(o.text, kw)}</span>
+                      {isAns && <span className="ans-tag">✓</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
