@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# 题库文档属于本地数据，不提交到公开仓库
+*.docx
+*.doc
+*.pdf
+
+# 系统元数据
+.reasonix/
+reasonix.toml
