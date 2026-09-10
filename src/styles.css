@@ -227,3 +227,19 @@ body {
 .result-opt .opt-text { flex: 1; word-break: break-word; }
 .ans-tag { color: var(--ok); font-weight: 700; }
 mark.hl { background: #fde68a; color: inherit; border-radius: 3px; padding: 0 1px; }
+
+/* ---------- 首页工具条 ---------- */
+.toolbar { display: flex; gap: 10px; padding: 14px 16px 0; }
+.toolbar .btn { flex: 1; }
+
+/* ---------- 必知必会按钮 ---------- */
+.btn.must { border-color: #f59e0b; color: #b45309; background: #fffbeb; }
+.btn.must:disabled { color: var(--text-2); border-color: var(--line); background: var(--card); }
+
+/* ---------- 错题本分组 ---------- */
+.group-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 8px 0 10px;
+  font-size: 14px; font-weight: 600; color: var(--text-2);
+}
+.group-head .btn { padding: 6px 12px; font-size: 13px; }

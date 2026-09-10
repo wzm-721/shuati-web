@@ -12,6 +12,7 @@ import {
   shuffle,
 } from './lib/storage.js';
 import { searchQuestions, formatAnswer } from './lib/search.js';
+import { filterMustKnow } from './lib/filters.js';
 
 const TYPE_LABEL = { single: '单选题', multi: '多选题', judge: '判断题' };
 
@@ -45,6 +46,13 @@ export default function App() {
       )}
       {route.name === 'search' && (
         <Search banks={banks} initialBankId={route.bankId} onBack={goHome} />
+      )}
+      {route.name === 'wrongbook' && (
+        <WrongBook
+          banks={banks}
+          onBack={goHome}
+          onPractice={(bankId, questionIds) => setRoute({ name: 'practice', bankId, questionIds, title: '错题重练' })}
+        />
       )}
       {route.name === 'practice' && (
         <Practice
@@ -95,6 +103,10 @@ function Home({ banks, onRefresh, onOpen }) {
   const fileRef = useRef(null);
   const [importing, setImporting] = useState(null); // 'loading' | { fileName, questions, skippedCount }
   const records = getRecords();
+  const totalWrong = banks.reduce((s, b) => {
+    const r = records[b.id];
+    return s + (r && r.wrongIds ? r.wrongIds.length : 0);
+  }, 0);
 
   async function onFile(e) {
     const file = e.target.files[0];
@@ -130,11 +142,17 @@ function Home({ banks, onRefresh, onOpen }) {
         <button className="btn primary" onClick={() => fileRef.current.click()}>
           ＋ 导入题库
         </button>
-        <button className="btn" onClick={() => onOpen({ name: 'search', bankId: '' })}>
-          🔍 查题
-        </button>
         <input ref={fileRef} type="file" accept=".docx" hidden onChange={onFile} />
       </header>
+
+      {banks.length > 0 && (
+        <div className="toolbar">
+          <button className="btn" onClick={() => onOpen({ name: 'search', bankId: '' })}>🔍 快速查题</button>
+          <button className="btn" onClick={() => onOpen({ name: 'wrongbook' })}>
+            📕 错题本{totalWrong > 0 ? ` (${totalWrong})` : ''}
+          </button>
+        </div>
+      )}
 
       {banks.length === 0 ? (
         <div className="empty">
@@ -152,6 +170,7 @@ function Home({ banks, onRefresh, onOpen }) {
             const rate = rec.doneCount ? Math.round((rec.correctCount / rec.doneCount) * 100) : null;
             const byType = { single: 0, multi: 0, judge: 0 };
             bank.questions.forEach((q) => { byType[q.type] = (byType[q.type] || 0) + 1; });
+            const mustCount = filterMustKnow(bank.questions).length;
             return (
               <div className="bank-card" key={bank.id}>
                 <div className="bank-head">
@@ -182,6 +201,13 @@ function Home({ banks, onRefresh, onOpen }) {
                 <div className="bank-actions">
                   <button className="btn" onClick={() => onOpen({ name: 'search', bankId: bank.id })}>
                     查题
+                  </button>
+                  <button
+                    className="btn must"
+                    disabled={!mustCount}
+                    onClick={() => onOpen({ name: 'practice', bankId: bank.id, questionIds: filterMustKnow(bank.questions).map((q) => q.id), title: '必知必会专项' })}
+                  >
+                    必知必会{mustCount ? ` ${mustCount}` : ''}
                   </button>
                   <button className="btn" onClick={() => onOpen({ name: 'practice', bankId: bank.id, questionIds: bank.questions.map((q) => q.id), title: '顺序练习' })}>
                     顺序练习
@@ -603,6 +629,31 @@ function highlight(text, kw) {
   return out;
 }
 
+function AnswerCard({ q, kw }) {
+  return (
+    <div className="search-card">
+      <div className="q-type">
+        {TYPE_LABEL[q.type] || '题目'}{q.type === 'multi' && <span className="multi-hint">（多选）</span>}
+        <span className="card-bank">{q.bankName}</span>
+      </div>
+      <div className="q-text">{highlight(q.text, kw)}</div>
+      <div className="result-answer">答案：<b>{formatAnswer(q.answer)}</b></div>
+      <div className="options">
+        {q.options.map((o) => {
+          const isAns = q.answer.includes(o.letter);
+          return (
+            <div key={o.letter} className={`result-opt${isAns ? ' correct' : ''}`}>
+              <span className="opt-letter">{o.letter === '√' || o.letter === '×' ? '' : o.letter}</span>
+              <span className="opt-text">{highlight(o.text, kw)}</span>
+              {isAns && <span className="ans-tag">✓</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Search({ banks, initialBankId, onBack }) {
   const [kw, setKw] = useState('');
   const [bankId, setBankId] = useState(initialBankId || '');
@@ -640,25 +691,57 @@ function Search({ banks, initialBankId, onBack }) {
       ) : (
         <div className="search-list">
           {results.map((q) => (
-            <div className="search-card" key={q.id}>
-              <div className="q-type">
-                {TYPE_LABEL[q.type] || '题目'}{q.type === 'multi' && <span className="multi-hint">（多选）</span>}
-                <span className="card-bank">{q.bankName}</span>
+            <AnswerCard key={q.id} q={q} kw={kw} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================= 错题本（查看所有错题） ================= */
+
+function WrongBook({ banks, onBack, onPractice }) {
+  const records = getRecords();
+  const groups = banks
+    .map((bank) => {
+      const rec = records[bank.id] || { wrongIds: [] };
+      const questions = (rec.wrongIds || [])
+        .map((id) => bank.questions.find((q) => q.id === id))
+        .filter(Boolean)
+        .map((q) => ({ bankName: bank.name, ...q }));
+      return { bank, questions };
+    })
+    .filter((g) => g.questions.length);
+  const total = groups.reduce((s, g) => s + g.questions.length, 0);
+
+  return (
+    <div className="page">
+      <header className="topbar">
+        <button className="btn" onClick={onBack}>← 返回</button>
+        <h1 className="topbar-title">错题本</h1>
+        <span className="counter">{total} 题</span>
+      </header>
+
+      {total === 0 ? (
+        <div className="empty">
+          <div className="empty-icon">🎉</div>
+          <p>还没有错题</p>
+          <p className="sub">刷题时答错的题会自动收进这里，重新做对后会自动移除</p>
+        </div>
+      ) : (
+        <div className="search-list">
+          {groups.map((g) => (
+            <div key={g.bank.id}>
+              <div className="group-head">
+                <span>{g.bank.name}（{g.questions.length} 题）</span>
+                <button className="btn" onClick={() => onPractice(g.bank.id, g.questions.map((q) => q.id))}>
+                  重练这组
+                </button>
               </div>
-              <div className="q-text">{highlight(q.text, kw)}</div>
-              <div className="result-answer">答案：<b>{formatAnswer(q.answer)}</b></div>
-              <div className="options">
-                {q.options.map((o) => {
-                  const isAns = q.answer.includes(o.letter);
-                  return (
-                    <div key={o.letter} className={`result-opt${isAns ? ' correct' : ''}`}>
-                      <span className="opt-letter">{o.letter === '√' || o.letter === '×' ? '' : o.letter}</span>
-                      <span className="opt-text">{highlight(o.text, kw)}</span>
-                      {isAns && <span className="ans-tag">✓</span>}
-                    </div>
-                  );
-                })}
-              </div>
+              {g.questions.map((q) => (
+                <AnswerCard key={q.id} q={q} kw="" />
+              ))}
             </div>
           ))}
         </div>
