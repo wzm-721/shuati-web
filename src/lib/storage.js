@@ -43,12 +43,13 @@ export function saveBank(bank) {
 export function deleteBank(bankId) {
   const banks = getBanks().filter((b) => b.id !== bankId);
   write(BANKS_KEY, banks);
-  // 同时清理该题库的记录和考试
+  // 同时清理该题库的记录、考试和练习进度
   const records = getRecords();
   delete records[bankId];
   write(RECORDS_KEY, records);
   const exams = getExams().filter((e) => e.bankId !== bankId);
   write(EXAMS_KEY, exams);
+  clearBankSessions(bankId);
 }
 
 export function getBank(bankId) {
@@ -135,4 +136,51 @@ export function shuffle(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+/* ---------- 练习进度（退出后可继续） ---------- */
+
+const SESSIONS_KEY = 'st_sessions_v1';
+
+/** 会话结构：{ [bankId]: { [modeKey]: { questionIds, idx, stats, updatedAt } } } */
+export function getSessions() {
+  return read(SESSIONS_KEY, {});
+}
+
+export function getSession(bankId, modeKey) {
+  const s = getSessions();
+  return (s[bankId] && s[bankId][modeKey]) || null;
+}
+
+export function saveSession(bankId, modeKey, data) {
+  const s = getSessions();
+  if (!s[bankId]) s[bankId] = {};
+  s[bankId][modeKey] = data;
+  write(SESSIONS_KEY, s);
+}
+
+export function clearSession(bankId, modeKey) {
+  const s = getSessions();
+  if (s[bankId]) {
+    delete s[bankId][modeKey];
+    if (!Object.keys(s[bankId]).length) delete s[bankId];
+    write(SESSIONS_KEY, s);
+  }
+}
+
+export function clearBankSessions(bankId) {
+  const s = getSessions();
+  delete s[bankId];
+  write(SESSIONS_KEY, s);
+}
+
+/** 判断保存的会话是否可用于恢复：题目顺序完全一致且已练过至少一题 */
+export function isSameQuestionSet(session, questionIds) {
+  return !!(
+    session &&
+    Array.isArray(session.questionIds) &&
+    session.questionIds.length === questionIds.length &&
+    session.questionIds.every((id, i) => id === questionIds[i]) &&
+    (session.idx || 0) > 0
+  );
 }

@@ -2,13 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseDocx } from './lib/docxParser.js';
 import {
   buildBank,
+  clearSession,
   deleteBank,
   getBanks,
   getExams,
   getRecords,
+  getSession,
+  isSameQuestionSet,
   recordAnswer,
   saveBank,
   saveExam,
+  saveSession,
   shuffle,
 } from './lib/storage.js';
 import { searchQuestions, formatAnswer } from './lib/search.js';
@@ -59,6 +63,7 @@ export default function App() {
           bank={banks.find((b) => b.id === route.bankId)}
           questionIds={route.questionIds}
           title={route.title}
+          modeKey={route.modeKey}
           onExit={goHome}
         />
       )}
@@ -135,6 +140,22 @@ function Home({ banks, onRefresh, onOpen }) {
     onRefresh();
   }
 
+  // 进入练习：若存在未完成进度，询问是否继续
+  function startPractice(bank, modeKey, title, computeIds) {
+    const sess = getSession(bank.id, modeKey);
+    if (sess && Array.isArray(sess.questionIds) && sess.questionIds.length && (sess.idx || 0) > 0) {
+      const cont = confirm(
+        `「${title}」上次练到第 ${sess.idx + 1}/${sess.questionIds.length} 题，要继续上次进度吗？\n（点“取消”将重新开始）`
+      );
+      if (cont) {
+        onOpen({ name: 'practice', bankId: bank.id, modeKey, questionIds: sess.questionIds, title });
+        return;
+      }
+      clearSession(bank.id, modeKey);
+    }
+    onOpen({ name: 'practice', bankId: bank.id, modeKey, questionIds: computeIds(), title });
+  }
+
   return (
     <div className="page home">
       <header className="topbar">
@@ -205,14 +226,14 @@ function Home({ banks, onRefresh, onOpen }) {
                   <button
                     className="btn must"
                     disabled={!mustCount}
-                    onClick={() => onOpen({ name: 'practice', bankId: bank.id, questionIds: filterMustKnow(bank.questions).map((q) => q.id), title: '必知必会专项' })}
+                    onClick={() => startPractice(bank, 'must', '必知必会专项', () => filterMustKnow(bank.questions).map((q) => q.id))}
                   >
                     必知必会{mustCount ? ` ${mustCount}` : ''}
                   </button>
-                  <button className="btn" onClick={() => onOpen({ name: 'practice', bankId: bank.id, questionIds: bank.questions.map((q) => q.id), title: '顺序练习' })}>
+                  <button className="btn" onClick={() => startPractice(bank, 'order', '顺序练习', () => bank.questions.map((q) => q.id))}>
                     顺序练习
                   </button>
-                  <button className="btn" onClick={() => onOpen({ name: 'practice', bankId: bank.id, questionIds: shuffle(bank.questions.map((q) => q.id)), title: '随机刷题' })}>
+                  <button className="btn" onClick={() => startPractice(bank, 'random', '随机刷题', () => shuffle(bank.questions.map((q) => q.id)))}>
                     随机刷题
                   </button>
                   <button className="btn" onClick={() => onOpen({ name: 'exam-setup', bankId: bank.id })}>
@@ -221,7 +242,7 @@ function Home({ banks, onRefresh, onOpen }) {
                   <button
                     className="btn"
                     disabled={!rec.wrongIds.length}
-                    onClick={() => onOpen({ name: 'practice', bankId: bank.id, questionIds: rec.wrongIds, title: '错题重练' })}
+                    onClick={() => startPractice(bank, 'wrong', '错题重练', () => rec.wrongIds)}
                   >
                     错题重练
                   </button>
@@ -271,16 +292,35 @@ function Home({ banks, onRefresh, onOpen }) {
 
 /* ================= 刷题（顺序 / 随机 / 错题） ================= */
 
-function Practice({ bank, questionIds, title, onExit }) {
+function Practice({ bank, questionIds, title, modeKey, onExit }) {
   const questions = useMemo(
-    () => questionIds.map((id) => bank.questions.find((q) => q.id === id)).filter(Boolean),
+    () => (bank ? questionIds.map((id) => bank.questions.find((q) => q.id === id)).filter(Boolean) : []),
     [bank, questionIds]
   );
-  const [idx, setIdx] = useState(0);
+
+  // 首次进入时读取上次未完成的进度（题目顺序与保存的一致才恢复）
+  const resume = useMemo(() => {
+    if (!modeKey || !bank) return null;
+    const s = getSession(bank.id, modeKey);
+    return isSameQuestionSet(s, questionIds) ? s : null;
+  }, []); // 只在进入练习时计算一次
+
+  const [idx, setIdx] = useState(resume ? resume.idx : 0);
   const [selected, setSelected] = useState([]);
   const [checked, setChecked] = useState(false);
-  const [stats, setStats] = useState({ correct: 0, wrong: 0 });
+  const [stats, setStats] = useState(resume && resume.stats ? resume.stats : { correct: 0, wrong: 0 });
   const [finished, setFinished] = useState(false);
+
+  // 退出/刷新后可继续：自动保存进度
+  useEffect(() => {
+    if (!modeKey || !bank || !questions.length || finished) return;
+    saveSession(bank.id, modeKey, { questionIds, idx, stats, updatedAt: Date.now() });
+  }, [modeKey, idx, stats, finished]);
+
+  // 完成后清除进度
+  useEffect(() => {
+    if (finished && modeKey && bank) clearSession(bank.id, modeKey);
+  }, [finished]);
 
   if (!bank || !questions.length) {
     return (
@@ -325,6 +365,16 @@ function Practice({ bank, questionIds, title, onExit }) {
     setChecked(false);
   }
 
+  function restart() {
+    if (!confirm('确定重新开始吗？当前练习进度将被清空。')) return;
+    if (modeKey && bank) clearSession(bank.id, modeKey);
+    setIdx(0);
+    setSelected([]);
+    setChecked(false);
+    setStats({ correct: 0, wrong: 0 });
+    setFinished(false);
+  }
+
   if (finished) {
     const rate = total ? Math.round((stats.correct / total) * 100) : 0;
     return (
@@ -354,6 +404,7 @@ function Practice({ bank, questionIds, title, onExit }) {
       <header className="topbar">
         <button className="btn" onClick={onExit}>← 返回</button>
         <h1 className="topbar-title">{title}</h1>
+        <button className="icon-btn" title="重新开始" onClick={restart}>↻</button>
         <span className="counter">{idx + 1}/{total}</span>
       </header>
       <div className="progress"><div className="progress-bar" style={{ width: progress + '%' }} /></div>
