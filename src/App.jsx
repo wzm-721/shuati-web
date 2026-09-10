@@ -14,9 +14,16 @@ import {
   saveExam,
   saveSession,
   shuffle,
+  updateBank,
 } from './lib/storage.js';
 import { filterMustKnow } from './lib/filters.js';
+import { dedupeQuestions } from './lib/dedupe.js';
+import { applyAnswerFixes } from './lib/answerFixes.js';
 import { Search, WrongBook } from './pages.jsx';
+
+// 内置题库（由 scripts/build-builtin.mjs 生成；缺失时自动降级，不影响使用）
+const BUILTIN_MODULES = import.meta.glob('./data/builtinBank.js', { eager: true });
+const BUILTIN_BANK = (BUILTIN_MODULES['./data/builtinBank.js'] || {}).BUILTIN_BANK || null;
 
 const TYPE_LABEL = { single: '单选题', multi: '多选题', judge: '判断题' };
 
@@ -27,7 +34,13 @@ const isCorrect = (q, sel) => {
 };
 
 export default function App() {
-  const [banks, setBanks] = useState(getBanks());
+  // 首次打开且本地无题库时，自动载入内置题库
+  const [banks, setBanks] = useState(() => {
+    const existing = getBanks();
+    if (existing.length || !BUILTIN_BANK) return existing;
+    saveBank(buildBank(BUILTIN_BANK.name, BUILTIN_BANK.questions));
+    return getBanks();
+  });
   const [route, setRoute] = useState({ name: 'home' });
 
   const refresh = () => setBanks(getBanks());
@@ -100,7 +113,7 @@ export default function App() {
 
 function Home({ banks, onRefresh, onOpen }) {
   const fileRef = useRef(null);
-  const [importing, setImporting] = useState(null); // 'loading' | { fileName, questions, skippedCount }
+  const [importing, setImporting] = useState(null); // 'loading' | { fileName, questions, skippedCount, removedCount, fixedCount }
   const records = getRecords();
   const totalWrong = banks.reduce((s, b) => {
     const r = records[b.id];
@@ -115,10 +128,14 @@ function Home({ banks, onRefresh, onOpen }) {
     try {
       const buf = await file.arrayBuffer();
       const { questions, skipped } = await parseDocx(buf);
+      const { unique, removed } = dedupeQuestions(questions);
+      const { questions: fixedQuestions, fixes } = applyAnswerFixes(unique);
       setImporting({
         fileName: file.name.replace(/\.docx$/i, ''),
-        questions,
+        questions: fixedQuestions,
         skippedCount: skipped.length,
+        removedCount: removed.length,
+        fixedCount: fixes.length,
       });
     } catch (err) {
       alert('解析失败：' + err.message + '（请确认是 .docx 格式）');
@@ -131,6 +148,12 @@ function Home({ banks, onRefresh, onOpen }) {
     const bank = buildBank(importing.fileName, importing.questions);
     saveBank(bank);
     setImporting(null);
+    onRefresh();
+  }
+
+  function loadBuiltin() {
+    if (!BUILTIN_BANK) return;
+    saveBank(buildBank(BUILTIN_BANK.name, BUILTIN_BANK.questions));
     onRefresh();
   }
 
@@ -148,6 +171,33 @@ function Home({ banks, onRefresh, onOpen }) {
       clearSession(bank.id, modeKey);
     }
     onOpen({ name: 'practice', bankId: bank.id, modeKey, questionIds: computeIds(), title });
+  }
+
+  // 一键过滤已导入题库中的重复题目
+  function dedupeBank(bank) {
+    const { unique, removed } = dedupeQuestions(bank.questions);
+    if (!removed.length) {
+      alert('该题库没有重复题目。');
+      return;
+    }
+    if (!confirm(`发现 ${removed.length} 道重复题目，确定过滤掉吗？`)) return;
+    updateBank({ ...bank, questions: unique, count: unique.length });
+    onRefresh();
+    alert(`已过滤 ${removed.length} 道重复题目，当前共 ${unique.length} 题。`);
+  }
+
+  // 应用已知的答案修正（均有法规依据）
+  function fixBank(bank) {
+    const { questions: fixed, fixes } = applyAnswerFixes(bank.questions);
+    if (!fixes.length) {
+      alert('该题库没有需要修正的答案。');
+      return;
+    }
+    const detail = fixes.map((f) => `· ${f.desc}：${f.from.join('')} → ${f.to.join('')}`).join('\n');
+    if (!confirm(`将修正 ${fixes.length} 处答案：\n${detail}\n\n确定吗？`)) return;
+    updateBank({ ...bank, questions: fixed, count: fixed.length });
+    onRefresh();
+    alert(`已修正 ${fixes.length} 处答案。`);
   }
 
   return (
@@ -177,6 +227,11 @@ function Home({ banks, onRefresh, onOpen }) {
           <button className="btn primary big" onClick={() => fileRef.current.click()}>
             选择 .docx 文件导入
           </button>
+          {BUILTIN_BANK && (
+            <button className="btn big" style={{ marginTop: 10 }} onClick={loadBuiltin}>
+              载入内置题库（{BUILTIN_BANK.questions.length} 题）
+            </button>
+          )}
         </div>
       ) : (
         <div className="bank-list">
@@ -240,6 +295,12 @@ function Home({ banks, onRefresh, onOpen }) {
                   >
                     错题重练
                   </button>
+                  <button className="btn" onClick={() => dedupeBank(bank)}>
+                    去重
+                  </button>
+                  <button className="btn" onClick={() => fixBank(bank)}>
+                    修正答案
+                  </button>
                 </div>
               </div>
             );
@@ -265,6 +326,12 @@ function Home({ banks, onRefresh, onOpen }) {
                   <div><b>{importing.questions.filter((q) => q.type === 'multi').length}</b><span>多选</span></div>
                   <div><b>{importing.questions.filter((q) => q.type === 'judge').length}</b><span>判断</span></div>
                 </div>
+                {importing.removedCount > 0 && (
+                  <p className="tip">已自动过滤 {importing.removedCount} 道重复题目。</p>
+                )}
+                {importing.fixedCount > 0 && (
+                  <p className="tip">已自动修正 {importing.fixedCount} 处答案。</p>
+                )}
                 {importing.skippedCount > 0 && (
                   <p className="warn">有 {importing.skippedCount} 段内容未能识别为题目，已忽略。</p>
                 )}

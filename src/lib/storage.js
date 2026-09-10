@@ -40,6 +40,13 @@ export function saveBank(bank) {
   return bank;
 }
 
+/** 覆盖更新已有题库（按 id 匹配） */
+export function updateBank(bank) {
+  const banks = getBanks().map((b) => (b.id === bank.id ? bank : b));
+  write(BANKS_KEY, banks);
+  return bank;
+}
+
 export function deleteBank(bankId) {
   const banks = getBanks().filter((b) => b.id !== bankId);
   write(BANKS_KEY, banks);

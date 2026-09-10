@@ -1,13 +1,14 @@
 {
   "name": "shuati-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "engines": { "node": ">=18" },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node scripts/test-parser.mjs && node scripts/test-flow.mjs && node scripts/test-search.mjs && node scripts/test-filters.mjs && node scripts/test-session.mjs",
+    "test": "node scripts/test-parser.mjs && node scripts/test-flow.mjs && node scripts/test-search.mjs && node scripts/test-filters.mjs && node scripts/test-session.mjs && node scripts/test-dedupe.mjs && node scripts/test-fixes.mjs",
     "test:parser": "node scripts/test-parser.mjs"
   },
   "dependencies": {

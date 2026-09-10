@@ -11,3 +11,6 @@ dist/
 # 系统元数据
 .reasonix/
 reasonix.toml
+
+# 本地审阅产物
+review/
