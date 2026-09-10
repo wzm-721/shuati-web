@@ -15,8 +15,8 @@ import {
   saveSession,
   shuffle,
 } from './lib/storage.js';
-import { searchQuestions, formatAnswer } from './lib/search.js';
 import { filterMustKnow } from './lib/filters.js';
+import { Search, WrongBook } from './pages.jsx';
 
 const TYPE_LABEL = { single: '单选题', multi: '多选题', judge: '判断题' };
 
@@ -24,12 +24,6 @@ const isCorrect = (q, sel) => {
   const a = [...q.answer].sort();
   const s = [...sel].sort();
   return a.length === s.length && a.every((x, i) => x === s[i]);
-};
-
-const fmtDate = (ts) => {
-  const d = new Date(ts);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
 export default function App() {
@@ -516,6 +510,7 @@ function Exam({ bank, questionIds, minutes, onExit, onDone }) {
   const [answers, setAnswers] = useState({});
   const [cur, setCur] = useState(0);
   const [remain, setRemain] = useState(minutes * 60);
+  const [showSheet, setShowSheet] = useState(false);
   const answersRef = useRef(answers);
   answersRef.current = answers;
 
@@ -590,12 +585,15 @@ function Exam({ bank, questionIds, minutes, onExit, onDone }) {
       <header className="topbar">
         <button className="btn" onClick={onExit}>退出</button>
         <h1 className="topbar-title">模拟考试</h1>
-        {minutes ? <span className="timer">{mm}:{ss}</span> : <span className="counter">{answeredCount}/{total}</span>}
+        <button className="btn primary" onClick={submit}>交卷</button>
       </header>
       <div className="progress"><div className="progress-bar" style={{ width: (answeredCount / total) * 100 + '%' }} /></div>
 
       <div className="question-card">
-        <div className="q-type">{TYPE_LABEL[q.type]} · 第 {cur + 1} 题{q.type === 'multi' && <span className="multi-hint">（多选）</span>}</div>
+        <div className="q-type">
+          {TYPE_LABEL[q.type]} · 第 {cur + 1}/{total} 题{q.type === 'multi' && <span className="multi-hint">（多选）</span>}
+          <span className="exam-info">{minutes ? `⏱ ${mm}:${ss}　` : ''}已答 {answeredCount}/{total}</span>
+        </div>
         <div className="q-text">{q.text}</div>
         <div className="options">
           {q.options.map((o) => {
@@ -610,26 +608,37 @@ function Exam({ bank, questionIds, minutes, onExit, onDone }) {
         </div>
       </div>
 
-      <div className="answer-sheet">
-        {questions.map((qq, i) => {
-          const done = (answers[qq.id] || []).length > 0;
-          return (
-            <button
-              key={qq.id}
-              className={`sheet-item${i === cur ? ' current' : ''}${done ? ' done' : ''}`}
-              onClick={() => setCur(i)}
-            >
-              {i + 1}
-            </button>
-          );
-        })}
+      <div className="exam-bottom">
+        <button className="btn" disabled={cur === 0} onClick={() => setCur(cur - 1)}>‹ 上一题</button>
+        <button className="btn sheet-btn" onClick={() => setShowSheet(true)}>答题卡 {answeredCount}/{total}</button>
+        <button className="btn" disabled={cur >= total - 1} onClick={() => setCur(cur + 1)}>下一题 ›</button>
       </div>
 
-      <div className="exam-nav">
-        <button className="btn" disabled={cur === 0} onClick={() => setCur(cur - 1)}>上一题</button>
-        <button className="btn primary" onClick={submit}>交卷</button>
-        <button className="btn" disabled={cur >= total - 1} onClick={() => setCur(cur + 1)}>下一题</button>
-      </div>
+      {showSheet && (
+        <div className="sheet-mask" onClick={() => setShowSheet(false)}>
+          <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
+              <span>答题卡（已答 {answeredCount}/{total}）</span>
+              <button className="icon-btn" onClick={() => setShowSheet(false)}>✕</button>
+            </div>
+            <div className="sheet-grid">
+              {questions.map((qq, i) => {
+                const done = (answers[qq.id] || []).length > 0;
+                return (
+                  <button
+                    key={qq.id}
+                    className={`sheet-item${i === cur ? ' current' : ''}${done ? ' done' : ''}`}
+                    onClick={() => { setCur(i); setShowSheet(false); }}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
+            </div>
+            <button className="btn primary block" onClick={submit}>交卷</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -663,140 +672,4 @@ function ExamResult({ bank, result, onHome, onWrong }) {
   );
 }
 
-/* ================= 快速查题 ================= */
-
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-function highlight(text, kw) {
-  const k = (kw || '').trim();
-  if (!k || !text) return text;
-  const re = new RegExp('(' + escapeRe(k) + ')', 'gi');
-  const parts = text.split(re);
-  const out = [];
-  parts.forEach((p, i) => {
-    if (i % 2 === 1) out.push(<mark key={'h' + i} className="hl">{p}</mark>);
-    else if (p) out.push(p);
-  });
-  return out;
-}
-
-function AnswerCard({ q, kw }) {
-  return (
-    <div className="search-card">
-      <div className="q-type">
-        {TYPE_LABEL[q.type] || '题目'}{q.type === 'multi' && <span className="multi-hint">（多选）</span>}
-        <span className="card-bank">{q.bankName}</span>
-      </div>
-      <div className="q-text">{highlight(q.text, kw)}</div>
-      <div className="result-answer">答案：<b>{formatAnswer(q.answer)}</b></div>
-      <div className="options">
-        {q.options.map((o) => {
-          const isAns = q.answer.includes(o.letter);
-          return (
-            <div key={o.letter} className={`result-opt${isAns ? ' correct' : ''}`}>
-              <span className="opt-letter">{o.letter === '√' || o.letter === '×' ? '' : o.letter}</span>
-              <span className="opt-text">{highlight(o.text, kw)}</span>
-              {isAns && <span className="ans-tag">✓</span>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function Search({ banks, initialBankId, onBack }) {
-  const [kw, setKw] = useState('');
-  const [bankId, setBankId] = useState(initialBankId || '');
-  const results = useMemo(() => searchQuestions(banks, kw, bankId), [banks, kw, bankId]);
-
-  return (
-    <div className="page search">
-      <header className="topbar">
-        <button className="btn" onClick={onBack}>← 返回</button>
-        <h1 className="topbar-title">快速查题</h1>
-      </header>
-      <div className="search-bar">
-        <input
-          className="search-input"
-          type="search"
-          placeholder="输入题干或选项关键词"
-          value={kw}
-          autoFocus
-          onChange={(e) => setKw(e.target.value)}
-        />
-        <select className="bank-select" value={bankId} onChange={(e) => setBankId(e.target.value)}>
-          <option value="">全部题库</option>
-          {banks.map((b) => (
-            <option key={b.id} value={b.id}>{b.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {!kw.trim() ? (
-        <div className="empty">
-          <p>输入关键词，即可查到相关题目和正确答案</p>
-        </div>
-      ) : results.length === 0 ? (
-        <div className="empty"><p>没有找到相关题目，换个关键词试试</p></div>
-      ) : (
-        <div className="search-list">
-          {results.map((q) => (
-            <AnswerCard key={q.id} q={q} kw={kw} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ================= 错题本（查看所有错题） ================= */
-
-function WrongBook({ banks, onBack, onPractice }) {
-  const records = getRecords();
-  const groups = banks
-    .map((bank) => {
-      const rec = records[bank.id] || { wrongIds: [] };
-      const questions = (rec.wrongIds || [])
-        .map((id) => bank.questions.find((q) => q.id === id))
-        .filter(Boolean)
-        .map((q) => ({ bankName: bank.name, ...q }));
-      return { bank, questions };
-    })
-    .filter((g) => g.questions.length);
-  const total = groups.reduce((s, g) => s + g.questions.length, 0);
-
-  return (
-    <div className="page">
-      <header className="topbar">
-        <button className="btn" onClick={onBack}>← 返回</button>
-        <h1 className="topbar-title">错题本</h1>
-        <span className="counter">{total} 题</span>
-      </header>
-
-      {total === 0 ? (
-        <div className="empty">
-          <div className="empty-icon">🎉</div>
-          <p>还没有错题</p>
-          <p className="sub">刷题时答错的题会自动收进这里，重新做对后会自动移除</p>
-        </div>
-      ) : (
-        <div className="search-list">
-          {groups.map((g) => (
-            <div key={g.bank.id}>
-              <div className="group-head">
-                <span>{g.bank.name}（{g.questions.length} 题）</span>
-                <button className="btn" onClick={() => onPractice(g.bank.id, g.questions.map((q) => q.id))}>
-                  重练这组
-                </button>
-              </div>
-              {g.questions.map((q) => (
-                <AnswerCard key={q.id} q={q} kw="" />
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+/* ================= 页面组件（查题 / 错题本）见 pages.jsx ================= */

@@ -173,19 +173,44 @@ body {
 .score span { font-size: 18px; color: var(--text-2); margin-left: 4px; }
 
 /* ---------- 考试 ---------- */
-.answer-sheet {
-  display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px;
-  margin: 0 16px 14px;
+.exam { padding-bottom: 92px; }
+.exam-info { float: right; font-weight: 400; color: var(--text-2); font-size: 13px; }
+.exam-bottom {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  max-width: 640px; margin: 0 auto;
+  display: flex; gap: 8px; align-items: center;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--card); border-top: 1px solid var(--line);
+}
+.exam-bottom .btn { flex: 1; padding: 11px 6px; }
+.exam-bottom .sheet-btn { flex: 1.4; }
+.sheet-mask {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet-panel {
+  width: 100%; max-width: 640px;
+  background: var(--card); border-radius: 18px 18px 0 0;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  max-height: 74vh; display: flex; flex-direction: column;
+}
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 15px; font-weight: 600; margin-bottom: 12px;
+}
+.sheet-grid {
+  overflow-y: auto; flex: 1;
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;
+  padding-bottom: 12px;
 }
 .sheet-item {
   aspect-ratio: 1; border-radius: 10px;
   border: 1px solid var(--line); background: var(--card);
-  font-size: 14px; cursor: pointer;
+  font-size: 14px; cursor: pointer; color: var(--text);
 }
 .sheet-item.done { background: #dbeafe; border-color: var(--primary); color: var(--primary); }
 .sheet-item.current { box-shadow: 0 0 0 2px var(--primary); font-weight: 700; }
-.exam-nav { display: flex; gap: 10px; margin: 0 16px; }
-.exam-nav .btn { flex: 1; }
 
 /* ---------- 快速查题 ---------- */
 .search-bar {
